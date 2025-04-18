@@ -1,0 +1,10 @@
+{
+    "mqtt_ip_adress":"193.168.22.251",
+    "mqtt_port":"8083",
+    "mqtt_path":"/mqtt",
+    "sensor_id": "SPRMT-01",
+    "latitude": 52.46551,
+    "longitude": 32.42957,
+    "switch_type": "1:4",
+    "reset_value": 0 
+  }

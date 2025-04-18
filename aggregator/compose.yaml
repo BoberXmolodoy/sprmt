@@ -1,0 +1,83 @@
+
+services:
+  web:
+    image: nginx
+    restart: unless-stopped
+    env_file: .env
+    healthcheck:
+      test: "curl -ILf http://127.0.0.1:$HTTP_FE_PORT/health"
+    ports:
+      # http + ws protocol on path /mqtt
+      - published: $HTTP_FE_PORT
+        target: $HTTP_FE_PORT
+        host_ip: $HOST_IP
+        mode: host
+      # workaround for rotator
+      - published: $MQTT_WS_PORT
+        target: $HTTP_FE_PORT
+        host_ip: $HOST_IP
+        mode: host
+      # tcp protocol
+      - published: $MQTT_TCP_PORT
+        target: $MQTT_TCP_PORT
+        host_ip: $HOST_IP
+        mode: host
+    depends_on:
+      "aggregator":
+        condition: service_healthy
+      "mqtt_broker":
+        condition: service_healthy
+    volumes:
+      - ./nginx_default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx_real_ip.conf.template:/etc/nginx/templates/real_ip.conf.template:ro
+      - ./nginx_stream.conf.stream-template:/etc/nginx/templates/stream.conf.stream-template:ro
+
+  aggregator:
+    image: ghcr.io/sprmt/sprmt-aggregator:${SPRMT_IMAGE_TAG}
+    restart: unless-stopped
+    env_file: .env
+    init: true
+    depends_on:
+      "mqtt_broker":
+        condition: service_healthy
+      "maps":
+        condition: service_completed_successfully
+    healthcheck:
+      test: "curl -sLf -o /dev/null http://127.0.0.1:$SPRMT_BACKEND_BIND_PORT/"
+    volumes:
+      - var_lib_aggregator:/var/lib/sprmt_aggregator
+      - maps:/home/aggregator/sprmt_aggregator/_internal/maps
+
+  maps:
+    image: ghcr.io/sprmt/maps:latest
+    volumes:
+      - maps:/home/aggregator/sprmt_aggregator/maps
+
+  mqtt_broker:
+    image: eclipse-mosquitto:${MOSQUITTO_IMAGE_TAG}
+    command: mosquitto -c /etc/mosquitto.conf
+    user: mosquitto
+    env_file: .env
+    healthcheck:
+      test: mosquitto_sub -t '$$SYS/#' -C 1 -i healthcheck -W 3
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - ./mosquitto.conf:/etc/mosquitto.conf:Z
+
+  autoheal:
+    restart: always
+    image: willfarrell/autoheal
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=all
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  var_lib_aggregator:
+  maps:
+  mosquitto_data:
